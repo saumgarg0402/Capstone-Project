@@ -1,55 +1,131 @@
 package com.android.GetFit;
 
-import android.content.Context;
+import android.graphics.Color;
+
 import android.content.Intent;
-import android.support.v7.app.AppCompatActivity;
-import android.support.annotation.NonNull;
+import android.content.DialogInterface;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
+import android.support.v7.app.AppCompatActivity;
+import android.app.AlertDialog;
+
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
-import android.widget.Toast;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.LayoutInflater;
 
+import android.widget.Button;
+import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
+import android.widget.EditText;
 
 import com.firebase.ui.auth.AuthUI;
+import com.google.android.gms.auth.api.signin.GoogleSignIn;
+import com.google.android.gms.fitness.Fitness;
+import com.google.android.gms.fitness.FitnessOptions;
+import com.google.android.gms.fitness.data.DataSet;
+import com.google.android.gms.fitness.data.DataType;
+import com.google.android.gms.fitness.data.Field;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.OnFailureListener;
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.android.gms.tasks.Task;
+
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
-import android.hardware.*;
+import com.github.mikephil.charting.charts.LineChart;
+import com.github.mikephil.charting.utils.ColorTemplate;
+import com.github.mikephil.charting.data.Entry;
+import com.github.mikephil.charting.data.LineData;
+import com.github.mikephil.charting.data.LineDataSet;
+import com.github.mikephil.charting.components.YAxis.AxisDependency;
+import com.github.mikephil.charting.components.Legend;
+import com.github.mikephil.charting.components.XAxis;
+import com.github.mikephil.charting.components.YAxis;
+import com.github.mikephil.charting.components.AxisBase;
+import com.github.mikephil.charting.formatter.IAxisValueFormatter;
 
-public class MainActivity extends AppCompatActivity implements SensorEventListener{
+import java.util.Iterator;
+import java.util.concurrent.TimeUnit;
+import java.util.ArrayList;
+import android.util.Log;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.io.FileInputStream;
 
+import com.android.GetFit.models.User;
 
+public class MainActivity extends AppCompatActivity {
+
+    public static final String TAG = "StepCounter";
     public static final int RC_SIGN_IN = 1;
+    private static final int REQUEST_OAUTH_REQUEST_CODE = 0x1001;
+
     private String mUsername;
     public static final String ANONYMOUS = "anonymous";
 
-    private SensorManager sensorManager;
+    ProgressBar progress;
     private TextView count;
-    boolean activityRunning;
 
+    private LineChart mChart;
+    private TextView tvX;
+    private Button weightButton;
+
+    private FirebaseUser user;
+    private FirebaseDatabase mFirebaseDatabase;
+    private DatabaseReference mDatabaseReference;
     private FirebaseAuth mFirebaseAuth;
     private FirebaseAuth.AuthStateListener mAuthStateListener;
+    private FitnessOptions fitnessOptions;
 
+    private ArrayList<Entry> values;
+
+    private int weight;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        weightButton=findViewById(R.id.enter_Weight);
+        weightButton.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                weightPopup();
+            }
+        });
+
+        progress = findViewById(R.id.circle_progress_bar);
         count = (TextView) findViewById(R.id.count);
 
+        fitnessOptions =
+                FitnessOptions.builder()
+                        .addDataType(DataType.TYPE_STEP_COUNT_CUMULATIVE)
+                        .addDataType(DataType.TYPE_STEP_COUNT_DELTA)
+                        .build();
+
+        mFirebaseDatabase = FirebaseDatabase.getInstance();
         mFirebaseAuth = FirebaseAuth.getInstance();
+        mDatabaseReference = mFirebaseDatabase.getReference("users");
 
         mAuthStateListener = new FirebaseAuth.AuthStateListener() {
             @Override
             public void onAuthStateChanged(@NonNull FirebaseAuth firebaseAuth) {
-                FirebaseUser user = firebaseAuth.getCurrentUser();
+                user = firebaseAuth.getCurrentUser();
 
                 if (user != null) {
-                    // User is signed in
-                    onSignedInInitialize(user.getDisplayName());
+                    checkAndAdd();
                 } else {
                     // User is signed out
                     onSignedOutCleanup();
@@ -65,6 +141,29 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 }
             }
         };
+
+        tvX = (TextView) findViewById(R.id.tvXMax);
+
+        mChart = (LineChart) findViewById(R.id.chart1);
+
+        // no description text
+        mChart.getDescription().setEnabled(false);
+
+        // enable touch gestures
+        mChart.setTouchEnabled(true);
+
+        mChart.setDragDecelerationFrictionCoef(0.9f);
+
+        // enable scaling and dragging
+        mChart.setDragEnabled(true);
+        mChart.setScaleEnabled(true);
+        mChart.setDrawGridBackground(false);
+        mChart.setHighlightPerDragEnabled(true);
+
+        // set an alternative background color
+        mChart.setBackgroundColor(Color.WHITE);
+        mChart.setViewPortOffsets(0f, 0f, 0f, 0f);
+
     }
 
     @Override
@@ -80,13 +179,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 finish();
             }
         }
+        else if(requestCode == REQUEST_OAUTH_REQUEST_CODE){
+            if(resultCode == RESULT_OK){
+                subscribe();
+            }
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         mFirebaseAuth.addAuthStateListener(mAuthStateListener);
-        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        readData();
     }
 
     @Override
@@ -95,7 +199,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         if (mAuthStateListener != null) {
             mFirebaseAuth.removeAuthStateListener(mAuthStateListener);
         }
-        activityRunning = false;
     }
 
     @Override
@@ -119,32 +222,269 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    private void onSignedInInitialize(String username) {
-        mUsername = username;
-        activityRunning = true;
-        Sensor countSensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
-        if (countSensor != null) {
-            sensorManager.registerListener(this, countSensor, SensorManager.SENSOR_DELAY_UI);
+    private void onSignedInInitialize() {
+        mUsername = user.getDisplayName();
+        setData();
+        if (!GoogleSignIn.hasPermissions(GoogleSignIn.getLastSignedInAccount(this), fitnessOptions)) {
+            GoogleSignIn.requestPermissions(
+                    this,
+                    REQUEST_OAUTH_REQUEST_CODE,
+                    GoogleSignIn.getLastSignedInAccount(this),
+                    fitnessOptions);
         } else {
-            Toast.makeText(this, "Count sensor not available!", Toast.LENGTH_LONG).show();
+            subscribe();
         }
+
     }
 
     private void onSignedOutCleanup() {
         mUsername = ANONYMOUS;
-        activityRunning = false;
     }
 
-    @Override
-    public void onSensorChanged(SensorEvent event) {
-        if (activityRunning) {
-            count.setText(String.valueOf(event.values[0]));
-        }
+    /** Records step data by requesting a subscription to background step data. */
+    public void subscribe() {
+        // To create a subscription, invoke the Recording API. As soon as the subscription is
+        // active, fitness data will start recording.
+        Fitness.getRecordingClient(this, GoogleSignIn.getLastSignedInAccount(this))
+                .subscribe(DataType.TYPE_STEP_COUNT_CUMULATIVE)
+                .addOnCompleteListener(
+                        new OnCompleteListener<Void>() {
+                            @Override
+                            public void onComplete(@NonNull Task<Void> task) {
+                                if (task.isSuccessful()) {
+                                    Log.i(TAG, "Successfully subscribed!");
+                                } else {
+                                    Log.w(TAG, "There was a problem subscribing.", task.getException());
+                                }
+                            }
+                        });
+    }
+    /**
+     * Reads the current daily step total, computed from midnight of the current day on the device's
+     * current timezone.
+     */
+    private void readData() {
+        Fitness.getHistoryClient(this, GoogleSignIn.getLastSignedInAccount(this))
+                .readDailyTotal(DataType.TYPE_STEP_COUNT_DELTA)
+                .addOnSuccessListener(
+                        new OnSuccessListener<DataSet>() {
+                            @Override
+                            public void onSuccess(DataSet dataSet) {
+                                long total =
+                                        dataSet.isEmpty()
+                                                ? 0
+                                                : dataSet.getDataPoints().get(0).getValue(Field.FIELD_STEPS).asInt();
+                                count.setText(String.valueOf(total));
+                                int prog = (int)total/100;
+                                progress.setProgress(prog);
+                                //Log.i(TAG, "Total steps: " + total);
+                            }
+                        })
+                .addOnFailureListener(
+                        new OnFailureListener() {
+                            @Override
+                            public void onFailure(@NonNull Exception e) {
+                                //Log.w(TAG, "There was a problem getting the step count.", e);
+                            }
+                        });
+    }
+
+    private void setData() {
+
+        final String uid = user.getUid();
+        values = new ArrayList<Entry>();
+        mDatabaseReference.child(uid).addListenerForSingleValueEvent(
+                new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot dataSnapshot) {
+
+                        User user = dataSnapshot.getValue(User.class);
+
+                        // [START_EXCLUDE]
+                        if (user == null) {
+                            // User is null, error out
+                            Log.e(TAG, "User " + uid+ " is unexpectedly null");
+                            Toast.makeText(MainActivity.this,
+                                    "Error: could not fetch user.",
+                                    Toast.LENGTH_SHORT).show();
+                        } else {
+
+                            Iterator<DataSnapshot> itr = dataSnapshot.child("weights").getChildren().iterator();
+                            while(itr.hasNext()){
+                                DataSnapshot ds =itr.next();
+                                Log.i(TAG,Long.parseLong(ds.getKey())+" "+ds.getValue());
+                                float x = Long.parseLong(ds.getKey());
+                                float y = (long)ds.getValue();
+                                values.add(new Entry(x,y));
+                            }
+                            setUpChart();
+                        }
+                        //finish();
+                    }
+
+                    @Override
+                    public void onCancelled(DatabaseError databaseError) {
+                        Log.w(TAG, "getUser:onCancelled", databaseError.toException());
+                    }
+                });
 
     }
 
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int accuracy) {
+    private void submitPost() {
+
+        Toast.makeText(this, "Posting...", Toast.LENGTH_SHORT).show();
+        final String uid = user.getUid();
+        mDatabaseReference.child(uid).addListenerForSingleValueEvent(
+                new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot dataSnapshot) {
+
+                        User user = dataSnapshot.getValue(User.class);
+
+                        // [START_EXCLUDE]
+                        if (user == null) {
+                            // User is null, error out
+                            Log.e(TAG, "User " + uid+ " is unexpectedly null");
+                            Toast.makeText(MainActivity.this,
+                                    "Error: could not fetch user.",
+                                    Toast.LENGTH_SHORT).show();
+                        } else {
+                            Map<String,Integer> weights = user.weights;
+                            String ms = TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis())+"";
+                            weights.put(ms,weight);
+                            mDatabaseReference.child(uid).child("weights").setValue(weights);
+                            setData();
+                        }
+
+                        //finish();
+                    }
+
+                    @Override
+                    public void onCancelled(DatabaseError databaseError) {
+                        Log.w(TAG, "getUser:onCancelled", databaseError.toException());
+                    }
+                });
+    }
+
+
+    private void checkAndAdd(){
+        final String uid=user.getUid();
+        final String username=user.getDisplayName();
+        final String useremail=user.getEmail();
+        mDatabaseReference.child(uid).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+                if(!dataSnapshot.exists()){
+                    mDatabaseReference.setValue(uid);
+                    Map<String,Integer> weights = new HashMap<String,Integer>();
+                    User user = new User(username,useremail,weights);
+                    mDatabaseReference.child(uid).setValue(user);
+                    weightPopup();
+                }
+                onSignedInInitialize();
+            }
+
+            @Override
+            public void onCancelled(DatabaseError databaseError) {
+
+            }
+        });
+    }
+
+    private void setUpChart(){
+
+        Log.i(TAG,"Came to setup chart");
+        float finalValue = values.get(values.size()-1).getY();
+
+        LineDataSet set1 = new LineDataSet(values, "DataSet 1");
+        set1.setAxisDependency(AxisDependency.LEFT);
+        set1.setColor(ColorTemplate.getHoloBlue());
+        set1.setValueTextColor(ColorTemplate.getHoloBlue());
+        set1.setLineWidth(1.5f);
+        set1.setDrawCircles(false);
+        set1.setDrawValues(false);
+        set1.setFillAlpha(65);
+        set1.setFillColor(ColorTemplate.getHoloBlue());
+        set1.setHighLightColor(Color.rgb(244, 117, 117));
+        set1.setDrawCircleHole(false);
+
+        // create a data object with the datasets
+        LineData data = new LineData(set1);
+        data.setValueTextColor(Color.WHITE);
+        data.setValueTextSize(9f);
+
+        // set data
+        mChart.setData(data);
+        tvX.setText(String.valueOf(finalValue));
+
+        mChart.invalidate();
+
+        // get the legend (only possible after setting data)
+        Legend l = mChart.getLegend();
+        l.setEnabled(false);
+
+        XAxis xAxis = mChart.getXAxis();
+        xAxis.setPosition(XAxis.XAxisPosition.TOP_INSIDE);
+        xAxis.setTextSize(10f);
+        xAxis.setTextColor(Color.WHITE);
+        xAxis.setDrawAxisLine(false);
+        xAxis.setDrawGridLines(true);
+        xAxis.setTextColor(Color.rgb(255, 192, 56));
+        xAxis.setCenterAxisLabels(true);
+        xAxis.setGranularity(1f); // one hour
+        xAxis.setValueFormatter(new IAxisValueFormatter() {
+
+            private SimpleDateFormat mFormat = new SimpleDateFormat("dd MMM HH:mm");
+
+            @Override
+            public String getFormattedValue(float value, AxisBase axis) {
+
+                long millis = TimeUnit.DAYS.toMillis((long) value);
+                return mFormat.format(new Date(millis));
+            }
+        });
+
+        YAxis leftAxis = mChart.getAxisLeft();
+        leftAxis.setPosition(YAxis.YAxisLabelPosition.INSIDE_CHART);
+        leftAxis.setTextColor(ColorTemplate.getHoloBlue());
+        leftAxis.setDrawGridLines(true);
+        leftAxis.setGranularityEnabled(true);
+        leftAxis.setAxisMinimum(0f);
+        leftAxis.setAxisMaximum(170f);
+        leftAxis.setYOffset(-9f);
+        leftAxis.setTextColor(Color.rgb(255, 192, 56));
+
+        YAxis rightAxis = mChart.getAxisRight();
+        rightAxis.setEnabled(false);
+    }
+
+    private void weightPopup(){
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Enter Weight");
+
+        View viewInflated = LayoutInflater.from(this).inflate(R.layout.input_weight, (ViewGroup) findViewById(android.R.id.content), false);
+
+        final EditText input = (EditText) viewInflated.findViewById(R.id.input);
+
+        builder.setView(viewInflated);
+
+        builder.setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                dialog.dismiss();
+                weight = Integer.parseInt(input.getText().toString());
+                submitPost();
+            }
+        });
+        builder.setNegativeButton(android.R.string.cancel, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                dialog.cancel();
+            }
+        });
+
+        builder.show();
     }
 
 
