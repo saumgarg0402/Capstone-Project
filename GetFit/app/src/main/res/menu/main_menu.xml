@@ -3,11 +3,11 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/home"
-        android:title="Home"
+        android:title="@string/home_tab"
         app:showAsAction="never"/>
     <item
         android:id="@+id/route"
-        android:title="Route Tracker"
+        android:title="@string/route_tab"
         app:showAsAction="never"/>
     <item
         android:id="@+id/sign_out_menu"

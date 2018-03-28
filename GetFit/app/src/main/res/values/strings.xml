@@ -25,5 +25,7 @@
     <string name="location_access_prompt">Please give permission to access location</string>
     <string name="provider_prompt">Please enable Network Provider or GPS</string>
 
+    <string name="home_tab">Home</string>
+    <string name="route_tab">Route Tracker</string>
 
 </resources>

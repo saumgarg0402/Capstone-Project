@@ -4,18 +4,23 @@ package com.android.GetFit;
  * Created by saumgarg on 28/03/18.
  */
 
+import android.app.IntentService;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.appwidget.AppWidgetManager;
 import android.content.Intent;
 import android.os.IBinder;
+import android.support.annotation.Nullable;
 import android.util.Log;
 import android.widget.RemoteViews;
 
-public class UpdateWidgetService extends Service {
+public class UpdateWidgetService extends IntentService {
 
+    public UpdateWidgetService(){
+        super("UpdateWidgetService");
+    }
     @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
+    protected void onHandleIntent(@Nullable Intent intent) {
         AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(this
                 .getApplicationContext());
 
@@ -47,15 +52,5 @@ public class UpdateWidgetService extends Service {
             remoteViews.setOnClickPendingIntent(R.id.updateWidget, pendingIntent);
             appWidgetManager.updateAppWidget(widgetId, remoteViews);
         }
-        stopSelf();
-
-        super.onStartCommand(intent, Service.START_FLAG_RETRY, startId);
-
-        return Service.START_NOT_STICKY;
-    }
-
-    @Override
-    public IBinder onBind(Intent intent) {
-        return null;
     }
 }
