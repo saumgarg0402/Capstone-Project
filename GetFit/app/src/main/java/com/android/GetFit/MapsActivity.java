@@ -45,9 +45,8 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
-        onLoad=0;
+        onLoad = 0;
         changeLocation();
-
 
 
     }
@@ -67,11 +66,11 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         mMap = googleMap;
     }
 
-    private void markStartingLocationOnMap(GoogleMap mapObject,LatLng location,String str){
-        onLoad=1;
-        startLocation=location;
+    private void markStartingLocationOnMap(GoogleMap mapObject, LatLng location, String str) {
+        onLoad = 1;
+        startLocation = location;
         mapObject.addMarker(new MarkerOptions().position(location).title(str));
-        mapObject.moveCamera(CameraUpdateFactory.newLatLngZoom(location,10.2f));
+        mapObject.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 10.2f));
     }
 
     @Override
@@ -87,7 +86,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
                 } else {
 
-                    Toast.makeText(this, "Permission denied. Disabling route tracking", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, getString(R.string.location_denied), Toast.LENGTH_LONG).show();
                 }
                 return;
             }
@@ -105,47 +104,44 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         polyline.setJointType(JointType.ROUND);
     }
 
-    public void changeLocation(){
+    public void changeLocation() {
 
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "Please give permission to access location", Toast.LENGTH_SHORT).show();
-            ActivityCompat.requestPermissions(this,new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION},1);
+            Toast.makeText(this, getString(R.string.location_access_prompt), Toast.LENGTH_SHORT).show();
+            ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION}, 1);
             return;
         }
-        String provider=null;
-        if(locationManager.isProviderEnabled(locationManager.NETWORK_PROVIDER)){
-            provider=LocationManager.NETWORK_PROVIDER;
-        }
-        else if(locationManager.isProviderEnabled(locationManager.GPS_PROVIDER)){
-            provider=LocationManager.GPS_PROVIDER;
-        }
-        else{
-            Toast.makeText(this, "Please enable provider.", Toast.LENGTH_SHORT).show();
+        String provider = null;
+        if (locationManager.isProviderEnabled(locationManager.NETWORK_PROVIDER)) {
+            provider = LocationManager.NETWORK_PROVIDER;
+        } else if (locationManager.isProviderEnabled(locationManager.GPS_PROVIDER)) {
+            provider = LocationManager.GPS_PROVIDER;
+        } else {
+            Toast.makeText(this, getString(R.string.provider_prompt), Toast.LENGTH_SHORT).show();
             return;
         }
         locationManager.requestLocationUpdates(provider, 60000, 100, new LocationListener() {
             @Override
             public void onLocationChanged(Location location) {
-                double latitude=location.getLatitude();
-                double longitude= location.getLongitude();
+                double latitude = location.getLatitude();
+                double longitude = location.getLongitude();
 
-                LatLng latLng = new LatLng(latitude,longitude);
+                LatLng latLng = new LatLng(latitude, longitude);
                 Geocoder geocoder = new Geocoder(getApplicationContext());
 
-                if(onLoad == 0){
+                if (onLoad == 0) {
                     try {
-                        List<Address> addressList = geocoder.getFromLocation(latitude,longitude,1);
-                        String str = addressList.get(0).getLocality()+","+addressList.get(0).getCountryName();
-                        markStartingLocationOnMap(mMap,latLng,str);
+                        List<Address> addressList = geocoder.getFromLocation(latitude, longitude, 1);
+                        String str = addressList.get(0).getLocality() + "," + addressList.get(0).getCountryName();
+                        markStartingLocationOnMap(mMap, latLng, str);
 
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                }
-                else{
+                } else {
                     mMap.clear();
-                    Polyline polyline=mMap.addPolyline(new PolylineOptions().add(startLocation).add(latLng));
+                    Polyline polyline = mMap.addPolyline(new PolylineOptions().add(startLocation).add(latLng));
                     stylePolyline(polyline);
                 }
 
@@ -153,7 +149,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
             @Override
             public void onStatusChanged(String s, int i, Bundle bundle) {
-                Log.d("STATUS","Status changed");
+                Log.d("STATUS", "Status changed");
             }
 
             @Override

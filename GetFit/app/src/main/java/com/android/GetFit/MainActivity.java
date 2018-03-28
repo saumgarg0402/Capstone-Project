@@ -1,5 +1,6 @@
 package com.android.GetFit;
 
+import android.appwidget.AppWidgetManager;
 import android.graphics.Color;
 
 import android.content.Intent;
@@ -34,7 +35,6 @@ import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 
-import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
@@ -55,15 +55,17 @@ import com.github.mikephil.charting.components.YAxis;
 import com.github.mikephil.charting.components.AxisBase;
 import com.github.mikephil.charting.formatter.IAxisValueFormatter;
 
-import java.util.Iterator;
 import java.util.concurrent.TimeUnit;
 import java.util.ArrayList;
+
 import android.util.Log;
+
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.io.FileInputStream;
+
+import android.content.ComponentName;
 
 import com.android.GetFit.models.User;
 
@@ -72,9 +74,6 @@ public class MainActivity extends AppCompatActivity {
     public static final String TAG = "StepCounter";
     public static final int RC_SIGN_IN = 1;
     private static final int REQUEST_OAUTH_REQUEST_CODE = 0x1001;
-
-    private String mUsername;
-    public static final String ANONYMOUS = "anonymous";
 
     ProgressBar progress;
     private TextView count;
@@ -99,7 +98,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        weightButton=findViewById(R.id.enter_Weight);
+        weightButton = findViewById(R.id.enter_Weight);
         weightButton.setOnClickListener(new View.OnClickListener() {
             public void onClick(View v) {
                 weightPopup();
@@ -117,7 +116,7 @@ public class MainActivity extends AppCompatActivity {
 
         mFirebaseDatabase = FirebaseDatabase.getInstance();
         mFirebaseAuth = FirebaseAuth.getInstance();
-        mDatabaseReference = mFirebaseDatabase.getReference("users");
+        mDatabaseReference = mFirebaseDatabase.getReference(getString(R.string.firebase_lookup));
 
         mAuthStateListener = new FirebaseAuth.AuthStateListener() {
             @Override
@@ -173,15 +172,14 @@ public class MainActivity extends AppCompatActivity {
         if (requestCode == RC_SIGN_IN) {
             if (resultCode == RESULT_OK) {
                 // Sign-in succeeded, set up the UI
-                Toast.makeText(this, "Signed in!", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.sign_in), Toast.LENGTH_SHORT).show();
             } else if (resultCode == RESULT_CANCELED) {
                 // Sign in was canceled by the user, finish the activity
-                Toast.makeText(this, "Sign in canceled", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getString(R.string.signed_in_cancel), Toast.LENGTH_SHORT).show();
                 finish();
             }
-        }
-        else if(requestCode == REQUEST_OAUTH_REQUEST_CODE){
-            if(resultCode == RESULT_OK){
+        } else if (requestCode == REQUEST_OAUTH_REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
                 subscribe();
             }
         }
@@ -216,7 +214,7 @@ public class MainActivity extends AppCompatActivity {
                 AuthUI.getInstance().signOut(this);
                 return true;
             case R.id.route:
-                Intent intent = new Intent(this,MapsActivity.class);
+                Intent intent = new Intent(this, MapsActivity.class);
                 startActivity(intent);
             default:
                 return super.onOptionsItemSelected(item);
@@ -224,7 +222,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void onSignedInInitialize() {
-        mUsername = user.getDisplayName();
+
         setData();
         if (!GoogleSignIn.hasPermissions(GoogleSignIn.getLastSignedInAccount(this), fitnessOptions)) {
             GoogleSignIn.requestPermissions(
@@ -239,10 +237,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void onSignedOutCleanup() {
-        mUsername = ANONYMOUS;
+
+        mChart.clear();
+        tvX.setText(null);
+        progress.setProgress(0);
+        count.setText(null);
     }
 
-    /** Records step data by requesting a subscription to background step data. */
+    /**
+     * Records step data by requesting a subscription to background step data.
+     */
     public void subscribe() {
         // To create a subscription, invoke the Recording API. As soon as the subscription is
         // active, fitness data will start recording.
@@ -260,6 +264,7 @@ public class MainActivity extends AppCompatActivity {
                             }
                         });
     }
+
     /**
      * Reads the current daily step total, computed from midnight of the current day on the device's
      * current timezone.
@@ -276,7 +281,7 @@ public class MainActivity extends AppCompatActivity {
                                                 ? 0
                                                 : dataSet.getDataPoints().get(0).getValue(Field.FIELD_STEPS).asInt();
                                 count.setText(String.valueOf(total));
-                                int prog = (int)total/100;
+                                int prog = (int) total / 100;
                                 progress.setProgress(prog);
                                 //Log.i(TAG, "Total steps: " + total);
                             }
@@ -304,19 +309,17 @@ public class MainActivity extends AppCompatActivity {
                         // [START_EXCLUDE]
                         if (user == null) {
                             // User is null, error out
-                            Log.e(TAG, "User " + uid+ " is unexpectedly null");
+                            Log.e(TAG, "User " + uid + " is unexpectedly null");
                             Toast.makeText(MainActivity.this,
-                                    "Error: could not fetch user.",
+                                    getString(R.string.error_no_user),
                                     Toast.LENGTH_SHORT).show();
                         } else {
 
-                            Iterator<DataSnapshot> itr = dataSnapshot.child("weights").getChildren().iterator();
-                            while(itr.hasNext()){
-                                DataSnapshot ds =itr.next();
-                                Log.i(TAG,Long.parseLong(ds.getKey())+" "+ds.getValue());
+                            for (DataSnapshot ds : dataSnapshot.child(getString(R.string.firebase_lookup_weights)).getChildren()) {
+
                                 float x = Long.parseLong(ds.getKey());
-                                float y = (long)ds.getValue();
-                                values.add(new Entry(x,y));
+                                float y = (long) ds.getValue();
+                                values.add(new Entry(x, y));
                             }
                             setUpChart();
                         }
@@ -331,58 +334,21 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
-    private void submitPost() {
-
-        Toast.makeText(this, "Posting...", Toast.LENGTH_SHORT).show();
+    private void checkAndAdd() {
         final String uid = user.getUid();
-        mDatabaseReference.child(uid).addListenerForSingleValueEvent(
-                new ValueEventListener() {
-                    @Override
-                    public void onDataChange(DataSnapshot dataSnapshot) {
-
-                        User user = dataSnapshot.getValue(User.class);
-
-                        // [START_EXCLUDE]
-                        if (user == null) {
-                            // User is null, error out
-                            Log.e(TAG, "User " + uid+ " is unexpectedly null");
-                            Toast.makeText(MainActivity.this,
-                                    "Error: could not fetch user.",
-                                    Toast.LENGTH_SHORT).show();
-                        } else {
-                            Map<String,Integer> weights = user.weights;
-                            String ms = TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis())+"";
-                            weights.put(ms,weight);
-                            mDatabaseReference.child(uid).child("weights").setValue(weights);
-                            setData();
-                        }
-
-                        //finish();
-                    }
-
-                    @Override
-                    public void onCancelled(DatabaseError databaseError) {
-                        Log.w(TAG, "getUser:onCancelled", databaseError.toException());
-                    }
-                });
-    }
-
-
-    private void checkAndAdd(){
-        final String uid=user.getUid();
-        final String username=user.getDisplayName();
-        final String useremail=user.getEmail();
+        final String username = user.getDisplayName();
+        final String useremail = user.getEmail();
         mDatabaseReference.child(uid).addListenerForSingleValueEvent(new ValueEventListener() {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot) {
-                if(!dataSnapshot.exists()){
+                if (!dataSnapshot.exists()) {
                     mDatabaseReference.setValue(uid);
-                    Map<String,Integer> weights = new HashMap<String,Integer>();
-                    User user = new User(username,useremail,weights);
+                    Map<String, Integer> weights = new HashMap<String, Integer>();
+                    User user = new User(username, useremail, weights);
                     mDatabaseReference.child(uid).setValue(user);
-                    weightPopup();
                 }
                 onSignedInInitialize();
+
             }
 
             @Override
@@ -392,35 +358,36 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void setUpChart(){
+    private void setUpChart() {
 
-        Log.i(TAG,"Came to setup chart");
-        float finalValue = values.get(values.size()-1).getY();
+        float finalValue = 0;
+        int vsize=values.size();
 
-        LineDataSet set1 = new LineDataSet(values, "DataSet 1");
-        set1.setAxisDependency(AxisDependency.LEFT);
-        set1.setColor(ColorTemplate.getHoloBlue());
-        set1.setValueTextColor(ColorTemplate.getHoloBlue());
-        set1.setLineWidth(1.5f);
-        set1.setDrawCircles(false);
-        set1.setDrawValues(false);
-        set1.setFillAlpha(65);
-        set1.setFillColor(ColorTemplate.getHoloBlue());
-        set1.setHighLightColor(Color.rgb(244, 117, 117));
-        set1.setDrawCircleHole(false);
+        if (vsize > 0) {
+            finalValue = values.get(vsize - 1).getY();
+            LineDataSet set1 = new LineDataSet(values, getString(R.string.weight_set_label));
+            set1.setAxisDependency(AxisDependency.LEFT);
+            set1.setColor(ColorTemplate.getHoloBlue());
+            set1.setValueTextColor(ColorTemplate.getHoloBlue());
+            set1.setLineWidth(1.5f);
+            set1.setDrawCircles(false);
+            set1.setDrawValues(false);
+            set1.setFillAlpha(65);
+            set1.setFillColor(ColorTemplate.getHoloBlue());
+            set1.setHighLightColor(Color.rgb(244, 117, 117));
+            set1.setDrawCircleHole(false);
 
-        // create a data object with the datasets
-        LineData data = new LineData(set1);
-        data.setValueTextColor(Color.WHITE);
-        data.setValueTextSize(9f);
+            LineData data = new LineData(set1);
+            data.setValueTextColor(Color.WHITE);
+            data.setValueTextSize(9f);
 
-        // set data
-        mChart.setData(data);
-        tvX.setText(String.valueOf(finalValue));
+            mChart.setData(data);
+            tvX.setText(String.valueOf(finalValue));
+
+        }
 
         mChart.invalidate();
 
-        // get the legend (only possible after setting data)
         Legend l = mChart.getLegend();
         l.setEnabled(false);
 
@@ -459,10 +426,10 @@ public class MainActivity extends AppCompatActivity {
         rightAxis.setEnabled(false);
     }
 
-    private void weightPopup(){
+    private void weightPopup() {
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Enter Weight");
+        builder.setTitle(getString(R.string.weight_prompt));
 
         View viewInflated = LayoutInflater.from(this).inflate(R.layout.input_weight, (ViewGroup) findViewById(android.R.id.content), false);
 
@@ -489,5 +456,54 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+    private void submitPost() {
+        Log.i(TAG,"Weight entered : "+weight);
+        Toast.makeText(this, getString(R.string.posting), Toast.LENGTH_SHORT).show();
+        final String uid = user.getUid();
+        mDatabaseReference.child(uid).addListenerForSingleValueEvent(
+                new ValueEventListener() {
+                    @Override
+                    public void onDataChange(DataSnapshot dataSnapshot) {
+
+                        User user = dataSnapshot.getValue(User.class);
+
+                        if (user == null) {
+                            // User is null, error out
+                            Log.e(TAG, "User " + uid + " is unexpectedly null");
+                            Toast.makeText(MainActivity.this,
+                                    getString(R.string.error_no_user),
+                                    Toast.LENGTH_SHORT).show();
+                        } else {
+                            Map<String, Integer> weights = new HashMap<String,Integer>();
+                            if(user.weights !=null) {
+                                weights = user.weights;
+                            }
+                            String ms = TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis()) + "";
+                            weights.put(ms, weight);
+                            mDatabaseReference.child(uid).child(getString(R.string.firebase_lookup_weights)).setValue(weights);
+                            setData();
+                            updateWidget();
+                        }
+                    }
+
+                    @Override
+                    public void onCancelled(DatabaseError databaseError) {
+                        Log.w(TAG, "getUser:onCancelled", databaseError.toException());
+                    }
+                });
+    }
+
+    //Using Intent Service to Update Widget
+    public void updateWidget(){
+
+        Intent intent = new Intent(this,
+                UpdateWidgetService.class);
+        intent.setAction("android.appwidget.action.APPWIDGET_UPDATE");
+        int allWidgetIds[] = AppWidgetManager.getInstance(getApplication()).getAppWidgetIds(new ComponentName(getApplication(), WidgetProvider.class));
+        intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, allWidgetIds);
+        intent.putExtra("weight",weight);
+        startService(intent);
+
+    }
 
 }
